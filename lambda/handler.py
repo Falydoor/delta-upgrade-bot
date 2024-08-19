@@ -1,15 +1,16 @@
-import logging
-import requests
-import boto3
-import time
-import logging
 import json
+import logging
 import os
 import socket
+import time
+from datetime import datetime
+
+import boto3
 import pytz
+import requests
+from fake_useragent import UserAgent
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from datetime import datetime
 
 logger = logging.getLogger()
 logger.setLevel("INFO")
@@ -48,25 +49,19 @@ def gsheet_write(values, service, gsheet_config):
                 .execute()
             )
             row_number = len(result.get("values", [])) + 1
-            result = (
-                service.spreadsheets()
-                .values()
-                .append(
-                    spreadsheetId=gsheet_config["id"],
-                    range=f"{gsheet_config['tab']}!A{row_number}:F",
-                    valueInputOption="USER_ENTERED",
-                    body={"values": values},
-                )
-                .execute()
-            )
+            service.spreadsheets().values().append(
+                spreadsheetId=gsheet_config["id"],
+                range=f"{gsheet_config['tab']}!A{row_number}:F",
+                valueInputOption="USER_ENTERED",
+                body={"values": values},
+            ).execute()
             break
         except Exception:
             logger.exception("Unable to write to GSheet (try %s)", i)
             time.sleep(30 * i)
 
 
-def check_seats(trip, idx, gsheets_service, gsheet_config):
-    logger.info("Checking trip %s : %s", idx, trip["url"])
+def check_seats(trip, gsheets_service, gsheet_config):
     run_datetime = (
         datetime.now(pytz.timezone("US/Eastern"))
         .replace(tzinfo=None)
@@ -74,7 +69,7 @@ def check_seats(trip, idx, gsheets_service, gsheet_config):
     )
     try:
         headers = {
-            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "user-agent": str(UserAgent().chrome),
             "authority": "www.delta.com",
             "accept": "*/*",
             "accept-language": "en-US,en;q=0.9,fr-FR;q=0.8,fr;q=0.7,es;q=0.6",
@@ -110,7 +105,7 @@ def check_seats(trip, idx, gsheets_service, gsheet_config):
                             prices.append(float(offer["amount"]))
             if len(prices) > 0:
                 min_price = int(min(prices))
-                trip_name = ism_response["flightInfoList"][idx][
+                trip_name = ism_response["flightInfoList"][trip["leg"]][
                     "departureArrivalCityName"
                 ]
                 values.append(
@@ -126,8 +121,8 @@ def check_seats(trip, idx, gsheets_service, gsheet_config):
 
                 # Send alert
                 if (
-                    cabin_type in trip["alerts"]
-                    and min_price <= trip["alerts"][cabin_type]
+                        cabin_type in trip["alerts"]
+                        and min_price <= trip["alerts"][cabin_type]
                 ):
                     subject = f"Delta Bot - {cabin_type} for ${min_price} ({trip_name})"
                     logger.info("Sending alert with subject '%s'", subject)
@@ -154,4 +149,5 @@ def main(event, context):
 
     gsheets_service = gsheet_service(config["google"])
     for idx, trip in enumerate(config["trips"]):
-        check_seats(trip, idx, gsheets_service, config["gsheet"])
+        logger.info("Checking trip %s : %s", idx, trip["url"])
+        check_seats(trip, gsheets_service, config["gsheet"])
