@@ -1,0 +1,23 @@
+{
+    "trips": [
+        {
+            "name": "JFK -> DFW",
+            "leg": 0,
+            "url": "https://www.delta.com/seat/web/RetrievePostBookingSeatMap",
+            "data": "",
+            "alerts": {
+                "FIRST": 150,
+                "COMFORTPLUS": 50
+            }
+        }
+    ],
+    "gsheet": {
+        "id": "",
+        "tab": ""
+    },
+    "google": {
+        "refresh_token": "",
+        "client_id": "",
+        "client_secret": ""
+    }
+}
