@@ -12,3 +12,4 @@ cdk.context.json
 
 .DS_Store
 .idea
+.env
