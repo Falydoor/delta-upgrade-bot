@@ -1,2 +1,5 @@
-aws-cdk-lib==2.128.0
+aws-cdk-lib==2.152.0
 constructs>=10.0.0,<11.0.0
+aiohttp~=3.10.4
+polars~=1.5.0
+fake-useragent==1.5.1

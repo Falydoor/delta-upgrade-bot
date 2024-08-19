@@ -19,20 +19,20 @@ class DeltaUpgradeBotStack(Stack):
 
         vpc = ec2.Vpc.from_lookup(self, "VPC", is_default=True)
         subnet = ec2.Subnet.from_subnet_attributes(
-            self, "Subnet", subnet_id="subnet-8d9bf8a3", availability_zone="us-east-1a"
+            self, "Subnet", subnet_id="", availability_zone="us-east-1a"
         )
         sg = ec2.SecurityGroup.from_security_group_id(
-            self, "SG", "sg-053b4fa90fb7c2679"
+            self, "SG", ""
         )
 
         bucket = s3.Bucket.from_bucket_arn(
-            self, "Bucket", "arn:aws:s3:::delta-upgrade-bot"
+            self, "Bucket", ""
         )
         topic = sns.Topic.from_topic_arn(
-            self, "Topic", "arn:aws:sns:us-east-1:872007107449:email_me"
+            self, "Topic", ""
         )
 
-        lambdaFn = lambda_.Function(
+        lambda_fn = lambda_.Function(
             self,
             "Lambda",
             memory_size=512,
@@ -49,7 +49,7 @@ class DeltaUpgradeBotStack(Stack):
                 ),
             ),
             handler="handler.main",
-            timeout=Duration.minutes(1),
+            timeout=Duration.minutes(5),
             runtime=lambda_.Runtime.PYTHON_3_9,
             environment={
                 "TOPIC_ARN": topic.topic_arn,
@@ -62,13 +62,13 @@ class DeltaUpgradeBotStack(Stack):
             allow_public_subnet=True,
         )
 
-        bucket.grant_read(lambdaFn)
+        bucket.grant_read(lambda_fn)
 
         rule = events.Rule(
             self,
             "Rule",
-            schedule=events.Schedule.rate(Duration.hours(1)),
+            schedule=events.Schedule.rate(Duration.minutes(30)),
         )
-        rule.add_target(targets.LambdaFunction(lambdaFn))
+        rule.add_target(targets.LambdaFunction(lambda_fn))
 
-        topic.grant_publish(lambdaFn)
+        topic.grant_publish(lambda_fn)
