@@ -102,7 +102,9 @@ def check_seats(trip, gsheets_service, gsheet_config):
                 for row in cabin["seatRows"]:
                     for column in row["seatColumns"]:
                         for offer in column["seatOffer"]:
-                            prices.append(float(offer["amount"]))
+                            seat_price = float(offer["amount"])
+                            if seat_price > 0:
+                                prices.append(seat_price)
             if len(prices) > 0:
                 min_price = int(min(prices))
                 trip_name = ism_response["flightInfoList"][trip["leg"]][
