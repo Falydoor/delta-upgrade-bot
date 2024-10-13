@@ -107,9 +107,6 @@ def check_seats(trip, gsheets_service, gsheet_config):
                                 prices.append(seat_price)
             if len(prices) > 0:
                 min_price = int(min(prices))
-                trip_name = ism_response["flightInfoList"][trip["leg"]][
-                    "departureArrivalCityName"
-                ]
                 values.append(
                     [
                         run_datetime,
@@ -117,7 +114,8 @@ def check_seats(trip, gsheets_service, gsheet_config):
                         min_price,
                         int(max(prices)),
                         int(sum(prices) / len(prices)),
-                        trip_name,
+                        trip["name"],
+                        f"{trip['name']} - {cabin_type}",
                     ]
                 )
 
@@ -126,7 +124,7 @@ def check_seats(trip, gsheets_service, gsheet_config):
                         cabin_type in trip["alerts"]
                         and min_price <= trip["alerts"][cabin_type]
                 ):
-                    subject = f"Delta Bot - {cabin_type} for ${min_price} ({trip_name})"
+                    subject = f"Delta Bot - {cabin_type} for ${min_price} ({trip['name']})"
                     logger.info("Sending alert with subject '%s'", subject)
 
                     # Publish to SNS
