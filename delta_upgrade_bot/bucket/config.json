@@ -1,7 +1,6 @@
 {
     "trips": [
         {
-            "name": "JFK -> DFW",
             "url": "https://www.delta.com/seat/web/RetrievePostBookingSeatMap",
             "data": "",
             "alerts": {

@@ -4,6 +4,7 @@ import os
 import socket
 import time
 from datetime import datetime
+from urllib.parse import parse_qs
 
 import boto3
 import pytz
@@ -61,6 +62,11 @@ def gsheet_write(values, service, gsheet_config):
             time.sleep(30 * i)
 
 
+def get_window_columns(pattern):
+    columns = pattern.split("|")
+    return [columns[0][0], columns[-1][-1]]
+
+
 def check_seats(trip, gsheets_service, gsheet_config):
     run_datetime = (
         datetime.now(pytz.timezone("US/Eastern"))
@@ -94,17 +100,50 @@ def check_seats(trip, gsheets_service, gsheet_config):
             return
 
         ism_response = r.json()["retrieveISMResponse"]
+
+        if not ism_response:
+            logger.info("Empty response")
+            return
+
+        # Get trip's data
+        segment_number = parse_qs(trip["data"])["segmentNumber"][0]
+        trip_name = None
+        trip_seat_type = None
+        trip_seat_number = None
+        for seat_info in ism_response["passengerList"][0]["seatInfoList"]:
+            if seat_info["segmentNumber"] == segment_number:
+                trip_name = f"{seat_info['departureAirport']} -> {seat_info['arrivalAirport']}"
+                trip_seat_number = seat_info["seatNumber"]
+
+        if not trip_name or not trip_seat_number or not ism_response["seatMapDO"]:
+            logger.info("Unable to get trip's data")
+            return
+
         values = []
+        window_seats = {}
         for cabin in ism_response["seatMapDO"]["seatCabins"]:
             prices = []
             cabin_type = cabin["cabinType"]
-            if cabin_type not in ["COACH"]:
-                for row in cabin["seatRows"]:
-                    for column in row["seatColumns"]:
-                        for offer in column["seatOffer"]:
-                            seat_price = float(offer["amount"])
-                            if seat_price > 0:
-                                prices.append(seat_price)
+            window_columns = get_window_columns(cabin["seatConfiguration"])
+            window_seats[cabin_type] = []
+            for row in cabin["seatRows"]:
+                for column in row["seatColumns"]:
+                    if "id" not in column or not column["id"]:
+                        continue
+                    seat_id = column["id"]
+                    # Save seat's price
+                    for offer in column["seatOffer"]:
+                        seat_price = float(offer["amount"])
+                        if seat_price > 0:
+                            prices.append(seat_price)
+                    # Save if window seat and not occupied
+                    if not column.get("seat", {"occupied": True})["occupied"] and any(
+                            seat_id[-1] == letter for letter in window_columns):
+                        window_seats[cabin_type].append(seat_id)
+                    # Save passenger's seat type
+                    if trip_seat_number == seat_id:
+                        trip_seat_type = cabin_type
+
             if len(prices) > 0:
                 min_price = int(min(prices))
                 values.append(
@@ -114,23 +153,36 @@ def check_seats(trip, gsheets_service, gsheet_config):
                         min_price,
                         int(max(prices)),
                         int(sum(prices) / len(prices)),
-                        trip["name"],
-                        f"{trip['name']} - {cabin_type}",
+                        trip_name,
+                        f"{trip_name} - {cabin_type}",
                     ]
                 )
 
-                # Send alert
+                # Send price alert
                 if (
                         cabin_type in trip["alerts"]
                         and min_price <= trip["alerts"][cabin_type]
                 ):
-                    subject = f"Delta Bot - {cabin_type} for ${min_price} ({trip['name']})"
+                    subject = f"Delta Bot - {cabin_type} for ${min_price} ({trip_name})"
                     logger.info("Sending alert with subject '%s'", subject)
 
                     # Publish to SNS
                     sns_client.publish(
                         TopicArn=TOPIC_ARN, Message="Buy it!", Subject=subject
                     )
+
+        # Send window alert
+        logger.info("Passenger's seat '%s' and type '%s'", trip_seat_number, trip_seat_type)
+        logger.info("Window seats %s", window_seats[trip_seat_type])
+        for seat in window_seats[trip_seat_type]:
+            if int(seat[:-1]) < int(trip_seat_number[:-1]):
+                subject = f"Delta Bot - better window seat available ({trip_name})"
+                logger.info("Sending alert with subject '%s'", subject)
+
+                # Publish to SNS
+                sns_client.publish(
+                    TopicArn=TOPIC_ARN, Message=seat, Subject=subject
+                )
 
         if len(values):
             logger.info("Writing to Google Sheets")
