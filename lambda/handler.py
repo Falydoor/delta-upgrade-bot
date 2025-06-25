@@ -20,6 +20,7 @@ socket.setdefaulttimeout(15)
 region_name = "us-east-1"
 sns_client = boto3.client("sns", region_name=region_name)
 s3_client = boto3.client("s3", region_name=region_name)
+cabin_types = ["DELTAONE", "DELTAPREMIUM", "FIRST", "COMFORTPLUS", "MAIN"]
 
 TOPIC_ARN = os.environ["TOPIC_ARN"]
 BUCKET_NAME = os.environ["BUCKET_NAME"]
@@ -107,18 +108,25 @@ def check_seats(trip, gsheets_service, gsheet_config):
 
         # Get trip's data
         segment_number = parse_qs(trip["data"])["segmentNumber"][0]
+        trip_date = None
         trip_name = None
         trip_seat_type = None
         trip_seat_number = None
         for seat_info in ism_response["passengerList"][0]["seatInfoList"]:
             if seat_info["segmentNumber"] == segment_number:
+                trip_date = datetime.strptime(seat_info["flightDepartureDate"], "%a, %d %b %Y")
                 trip_name = f"{seat_info['departureAirport']} -> {seat_info['arrivalAirport']}"
                 trip_seat_number = seat_info["seatNumber"]
 
-        if not trip_name or not trip_seat_number or not ism_response["seatMapDO"]:
+        if not trip_date or not trip_name or not trip_seat_number or not ism_response["seatMapDO"]:
             logger.info("Unable to get trip's data")
             return
 
+        if trip_date <= datetime.now():
+            logger.info("Trip already completed")
+            return
+
+        trip_date = trip_date.strftime('%m/%d/%y')
         values = []
         window_seats = {}
         for cabin in ism_response["seatMapDO"]["seatCabins"]:
@@ -153,8 +161,8 @@ def check_seats(trip, gsheets_service, gsheet_config):
                         min_price,
                         int(max(prices)),
                         int(sum(prices) / len(prices)),
-                        trip_name,
-                        f"{trip_name} - {cabin_type}",
+                        f"{trip_name} ({trip_date})",
+                        f"{trip_name} - {cabin_type} ({trip_date})",
                     ]
                 )
 
